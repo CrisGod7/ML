@@ -1,6 +1,8 @@
 # Modelos de Machine Learning para analizar partidos de fútbol (multi-liga)
 
 > Guía de diseño: qué predecir, con qué datos, con qué modelos y, sobre todo, **cómo validar con rigor** para reducir errores y no engañarnos a nosotros mismos.
+>
+> **Actualización:** el plan de ejecución vigente (enfoque estadístico, márgenes conservadores, ensamble de modelos e interfaz) está en [`PLAN_PROYECTO_FUTBOL.md`](PLAN_PROYECTO_FUTBOL.md). Donde este documento hable de cuotas, léase como **auditoría opcional**: el modelo principal no depende de ellas.
 
 ---
 
@@ -14,11 +16,11 @@
 | Conteos (córners, tiros) | Regresión Poisson / Binomial Negativa (GLM o jerárquica bayesiana) + GBM con objetivo Poisson/Tweedie |
 | Multi-liga | Efectos por liga con *partial pooling* (jerárquico) + Elo global conectado por competiciones europeas |
 | Validación | **Walk-forward** (expanding window) por fecha, nunca *split* aleatorio; métricas probabilísticas (RPS, log-loss, Brier) |
-| Referencia dura | Las **cuotas de cierre** de casas de apuestas (Pinnacle, por ejemplo). Si no las igualas/superas en log-loss, el modelo no aporta |
+| Referencia | Línea base **estadística**: frecuencias por liga + Elo + Dixon-Coles. Las cuotas (sin margen) son solo una auditoría externa opcional |
 | Calibración | Obligatoria (isotónica / temperatura) y medida (ECE, curvas de fiabilidad) |
-| Datos externos | API de alineaciones, lesiones, estadísticas por jugador, cuotas, clima |
+| Datos externos | API de alineaciones, lesiones, estadísticas por jugador, clima (cuotas: opcional) |
 
-**Expectativa honesta:** el fútbol tiene mucho azar y el mercado de apuestas es muy eficiente. Un buen modelo en las 5 grandes ligas suele acertar el 1X2 en el orden del **50–55 %**, muy cerca de lo que implican las cuotas. "Evitar errores" no significa "no fallar", significa **no sobreestimar la confianza**: que cuando el modelo dice 70 %, ocurra ~70 % de las veces. Por eso la calibración y la validación estricta pesan más que la complejidad del modelo.
+**Expectativa honesta:** el fútbol tiene mucho azar y el mercado de apuestas es muy eficiente. Un buen modelo en las 5 grandes ligas suele acertar el 1X2 en el orden del **50–55 %**, muy cerca de lo que logran los mejores modelos públicos. "Evitar errores" no significa "no fallar", significa **no sobreestimar la confianza**: que cuando el modelo dice 70 %, ocurra ~70 % de las veces. Por eso la calibración y la validación estricta pesan más que la complejidad del modelo.
 
 ---
 
@@ -49,14 +51,14 @@ Conviene **no** meter todo en un único modelo. Cada pregunta tiene su propia di
 |---|---|---|
 | **API-Football** (api-sports.io) | Fixtures, **alineaciones** (`/fixtures/lineups`), estadísticas de equipo (`/fixtures/statistics`: tiros, tiros a puerta, córners, posesión), **estadísticas por jugador y partido** (`/fixtures/players`), H2H (`/fixtures/headtohead`), lesiones (`/injuries`), entrenadores (`/coachs`), cuotas (`/odds`) | Cubre muchas ligas; la profundidad histórica y los límites dependen del plan |
 | **football-data.org** | Calendarios, resultados, tablas, plantillas | Plan gratuito limitado a pocas competiciones; poco detalle de estadísticas |
-| **football-data.co.uk** | CSV históricos gratuitos con resultados, **tiros (HS/AS), tiros a puerta (HST/AST), córners (HC/AC)**, tarjetas, árbitro y **cuotas** (apertura y cierre en muchas temporadas) | Excelente para el histórico y para la línea base de mercado |
+| **football-data.co.uk** | CSV históricos gratuitos con resultados, **tiros (HS/AS), tiros a puerta (HST/AST), córners (HC/AC)**, tarjetas, árbitro y **cuotas** (apertura y cierre en muchas temporadas) | Excelente para el histórico de tiros, córners y tarjetas (las cuotas se ignoran o se usan solo para auditoría) |
 | **Understat** | xG por partido y por tiro (6 ligas) | Útil para forma "limpia" de azar |
 | **StatsBomb Open Data** | Datos de eventos completos de competiciones seleccionadas | Gratis, ideal para extraer *estilo de juego* (PPDA, pases progresivos...) |
 | **ClubElo** (clubelo.com) | Elo histórico de clubes europeos | Útil como *feature* y como baseline |
 | **FBref** | Estadísticas por equipo/jugador | Su oferta de datos avanzados y sus términos de scraping han cambiado; revisa disponibilidad actual |
 | **Transfermarkt** (datasets derivados) | Valor de mercado, plantillas, entrenadores, historial de bajas | Respeta sus términos; hay datasets públicos ya procesados |
 | **Open-Meteo** | Clima histórico y previsión (gratis) | Lluvia/viento/temperatura en el estadio |
-| **The Odds API / Pinnacle / Betfair** | Cuotas multi-casa | Para baseline, *closing line value* y *features* de mercado |
+| **The Odds API / Pinnacle / Betfair** | Cuotas multi-casa | **Opcional**: solo para auditar el modelo offline (no es *feature* ni dependencia) |
 | **Sportmonks / Opta / Wyscout** (de pago) | Datos de eventos y tracking de alta calidad | Solo si el proyecto lo justifica |
 
 ### 2.2 Ejemplo mínimo: alineaciones y estadísticas desde API-Football
@@ -124,7 +126,7 @@ El "ánimo" no se mide directamente; se aproxima con indicadores objetivos:
 |---|---|
 | Forma de puntos | Puntos de los últimos 5/10 partidos con media móvil exponencial (EWM) |
 | Forma "limpia de azar" | Diferencia xG a favor – xG en contra (EWM), **mejor predictor que los puntos** |
-| Sorpresa vs. expectativa | Residual: resultado real – resultado esperado según Elo/mercado (rachas de sobrerrendimiento tienden a revertir) |
+| Sorpresa vs. expectativa | Residual: resultado real – resultado esperado según Elo/Dixon-Coles (rachas de sobrerrendimiento tienden a revertir) |
 | Impacto emocional | Derrota abultada reciente, eliminación en copa/Europa, remontada/goles en el minuto 90+ |
 | Carga física | Días de descanso, partidos en últimos 14 días, viajes europeos |
 | Cambios institucionales | Entrenador nuevo (matches desde el cambio), racha de lesionados clave |
@@ -233,14 +235,18 @@ Modelo en dos capas (más estable que predecir el conteo "a pelo"):
 import numpy as np
 
 
-def dc_tau(x: int, y: int, mu: float, lam: float, rho: float) -> float:
-    """Corrección de Dixon-Coles para marcadores bajos (x = goles local, y = goles visitante)."""
+def dc_tau(x: int, y: int, mu_home: float, mu_away: float, rho: float) -> float:
+    """Corrección de Dixon-Coles para marcadores bajos.
+
+    x = goles del local, y = goles del visitante;
+    mu_home / mu_away = goles esperados de cada uno.
+    """
     if x == 0 and y == 0:
-        return 1 - mu * lam * rho
+        return 1 - mu_home * mu_away * rho
     if x == 0 and y == 1:
-        return 1 + mu * rho
+        return 1 + mu_home * rho
     if x == 1 and y == 0:
-        return 1 + lam * rho
+        return 1 + mu_away * rho
     if x == 1 and y == 1:
         return 1 - rho
     return 1.0
@@ -314,7 +320,7 @@ p_va = model.predict(X_va, num_iteration=model.best_iteration)  # (n, 3): visita
 - **Fuerza comparable entre ligas:** Elo global alimentado por partidos de competiciones europeas (Champions, Europa League, Conference), que conectan los grafos de las ligas.
 - Normalizar *features* **dentro de cada liga-temporada** (z-score) antes de mezclar.
 - Ligas con pocos datos: hereditan los parámetros de ligas parecidas (jerárquico) y empiezan con mayor incertidumbre; marcar en la salida.
-- Reportar métricas **por liga**: un buen promedio global puede esconder ligas donde el modelo es peor que las cuotas.
+- Reportar métricas **por liga**: un buen promedio global puede esconder ligas donde el modelo es peor que la línea base estadística.
 
 ---
 
@@ -330,7 +336,7 @@ Esta es la sección clave. La mayoría de los modelos de predicción deportiva "
 | Normalizar/escalar con todo el dataset | Ajustar *scalers*, encoders e imputadores **solo con el conjunto de entrenamiento** de cada pliegue (usar `Pipeline`) |
 | *Split* aleatorio | **Prohibido.** Usar partición cronológica |
 | Alineación real usada para predecir antes de que se publique | Guardar la **hora de disponibilidad** de cada dato (*point-in-time*) y filtrar por `available_at <= prediction_time` |
-| Cuotas de cierre como *feature* para un modelo que "predice" antes del cierre | Decidir el momento de uso: cuotas de apertura como *feature* o cuotas de cierre solo como **benchmark** |
+| Cuotas de cierre mezcladas con las *features* | No usar cuotas como *feature*; si se usan, solo como **benchmark externo** posterior a la predicción |
 | Información posterior en fichajes/entrenadores | Usar la plantilla y el entrenador vigentes **a la fecha del partido** |
 | Rankings/Elo calculados con datos futuros | Recalcular Elo de forma incremental, partido a partido |
 | Búsqueda de hiperparámetros con el conjunto de test | *Nested* temporal: ajuste interno ≠ evaluación externa |
@@ -385,7 +391,7 @@ def walk_forward(df: pd.DataFrame, first_val_start: str, step_days: int = 30, em
 | **CRPS / deviance NB** | Conteos (córners, tiros) | Evalúa toda la distribución, no solo la media |
 | MAE / RMSE | Referencia secundaria | Solo informativas |
 | Accuracy | Solo informativa | No sirve sola: ignora la confianza |
-| **CLV** (*closing line value*) | Si algún día se usa para apostar | Comparar con la cuota de cierre; es el mejor indicador de ventaja real |
+| **CLV** (*closing line value*) | Solo si algún día se usa para apostar | Opcional; no forma parte del enfoque actual |
 
 ```python
 import numpy as np
@@ -403,14 +409,14 @@ def log_loss_multi(probs: np.ndarray, outcome: np.ndarray, eps: float = 1e-12) -
     return float(-np.mean(np.log(p)))
 ```
 
-**Referencia de mercado:** convertir las cuotas de cierre en probabilidades (quitando el margen de la casa, p. ej. por normalización proporcional o método de Shin) y calcular su RPS/log-loss en **el mismo conjunto de partidos**. Ese es el techo realista.
+**Auditoría externa (opcional):** si se dispone de cuotas históricas, quitarles el margen de la casa (normalización proporcional o método de Shin) y comparar su RPS/log-loss en **el mismo conjunto de partidos**. Sirve para detectar errores graves, no para decidir el modelo.
 
 ### 5.4 Criterios de aceptación ("ser exigentes")
 
 Un modelo **no se publica** hasta cumplir, en el **test bloqueado**:
 
 1. Mejora estadísticamente a las tres bases: frecuencias, Elo y Dixon-Coles (intervalo de confianza *bootstrap* al 95 % sobre la diferencia de log-loss/RPS por partido que **no incluya 0**; opcionalmente test de Diebold-Mariano).
-2. Se mantiene **dentro de un margen pequeño de las cuotas de cierre** (o las supera); si queda claramente por debajo, sirve como herramienta de análisis, no como fuente de decisiones.
+2. (Opcional) Auditoría externa: si se dispone de cuotas históricas sin margen, el modelo no queda claramente por debajo; si lo hace, hay que revisar datos y *features* antes de publicar.
 3. **Calibración:** ECE bajo (p. ej. < 2–3 %) y curva de fiabilidad cercana a la diagonal, **en cada liga relevante** y por tramos de probabilidad.
 4. **Estabilidad temporal:** no depender de una sola temporada; la métrica no empeora sistemáticamente en las últimas.
 5. Pasa los *canary tests* de fuga de datos (5.1).
@@ -448,7 +454,7 @@ class MulticlassIsotonic:
 
 - Mostrar siempre **probabilidades**, no solo la clase ganadora.
 - **Conformal prediction:** conjuntos de predicción con cobertura garantizada (p. ej. "{Local, Empate}" al 80 %); si el conjunto contiene las tres clases, el partido es **no predecible** con confianza.
-- **Política de abstención:** no emitir recomendaciones cuando la alineación no está confirmada, el entrenador es nuevo, faltan datos de la liga o la discrepancia con el mercado es enorme sin explicación (suele ser un dato malo, no una ventaja).
+- **Política de abstención:** no emitir recomendaciones cuando la alineación no está confirmada, el entrenador es nuevo, faltan datos de la liga o la predicción se aleja mucho de la línea base estadística sin explicación (suele ser un dato malo, no una ventaja).
 - Para jugadores: informar P(titular) además de P(SoT ≥ 1).
 
 ### 5.7 Otros cuidados
@@ -475,7 +481,7 @@ class MulticlassIsotonic:
                               ▼
                        ┌─────────────┐
                        │  FEATURES   │  store *point-in-time* (available_at)
-                       │ (sin fuga)  │  Elo, forma, estilo, XI, H2H, mercado
+                       │ (sin fuga)  │  Elo, forma, estilo, XI, H2H, contexto
                        └──────┬──────┘
               ┌───────────────┼────────────────┐
               ▼               ▼                ▼
@@ -485,7 +491,7 @@ class MulticlassIsotonic:
                               ▼
                   Ensamble + calibración + conformal
                               ▼
-              Evaluación walk-forward + comparación con mercado
+              Evaluación walk-forward + comparación con líneas base
                               ▼
                  Predicciones registradas (log inmutable)
 ```
@@ -518,8 +524,8 @@ Herramientas recomendadas: `pandas`/`polars`, `scikit-learn`, `lightgbm`/`catboo
 
 | Fase | Entregable | Criterio de salida |
 |---|---|---|
-| **1. Datos y base** | Ingesta de 2–3 ligas + football-data.co.uk, Elo y Dixon-Coles, evaluación walk-forward, baseline de mercado | RPS/log-loss de la base y del mercado reproducibles |
-| **2. Features de equipo** | Forma (xG), local/visitante, descanso, H2H con *shrinkage*, mercado de apertura | Mejora vs. Dixon-Coles fuera de muestra (con ablaciones) |
+| **1. Datos y base** | Ingesta de 2–3 ligas + football-data.co.uk, Elo y Dixon-Coles, evaluación walk-forward | RPS/log-loss de las bases reproducibles |
+| **2. Features de equipo** | Forma (xG), local/visitante, descanso, H2H con *shrinkage* | Mejora vs. Dixon-Coles fuera de muestra (con ablaciones) |
 | **3. GBM + calibración** | LightGBM 1X2 + calibrador + métricas por liga | Cumple los criterios de la sección 5.4 en el test bloqueado |
 | **4. Córners y tiros de equipo** | Modelo NB/GBM Poisson con estilo de entrenador | Mejor CRPS que la media móvil simple y que la media de liga |
 | **5. Alineaciones y jugadores** | Integración de `/fixtures/lineups`, `/injuries`; modelo minutos × tasa para SoT | Calibración de P(SoT ≥ 1) por rango de probabilidad |
@@ -531,7 +537,7 @@ Herramientas recomendadas: `pandas`/`polars`, `scikit-learn`, `lightgbm`/`catboo
 ## 8. Advertencias finales
 
 - Ningún modelo elimina el azar; el objetivo es **probabilidades bien calibradas**, no certezas.
-- Si el uso final son apuestas, el único indicador fiable de ventaja real es superar de forma sostenida a la **cuota de cierre** (CLV) con una muestra grande; y conviene practicar juego responsable y gestionar el riesgo (p. ej. Kelly fraccional) y la legalidad local.
+- Si el uso final son apuestas, conviene practicar juego responsable, gestionar el riesgo y respetar la legalidad local; una probabilidad alta nunca es una garantía.
 - Respetar los **términos de servicio** de cada API/sitio (límites, redistribución, *scraping*).
 - Documentar cada experimento: lo que no funcionó es tan valioso como lo que sí.
 
